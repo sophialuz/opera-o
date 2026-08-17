@@ -15,23 +15,25 @@
       <div class="card auth-card">
         <div class="tabs"><button class="tab active" data-auth-tab="login">Entrar</button><button class="tab" data-auth-tab="request">Pedir autorização</button></div>
         <form id="loginForm" class="form">
-          <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+          <label>Nickname<input id="loginNickname" type="text" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]+" required></label>
           <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" minlength="8" required></label>
           <button class="primary" type="submit">Entrar</button><p id="loginMessage" class="message"></p>
         </form>
         <form id="requestForm" class="form hidden">
           <label>Nome completo<input id="requestName" maxlength="120" required></label>
-          <label>E-mail<input id="requestEmail" type="email" autocomplete="email" maxlength="180" required></label>
+          <label>Nickname para entrar<input id="requestNickname" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]+" placeholder="Ex.: joao.silva" required></label>
+          <label>E-mail para confirmar o cadastro<input id="requestEmail" type="email" autocomplete="email" maxlength="180" required></label>
+          <label>Celular (opcional)<input id="requestPhone" type="tel" maxlength="30" placeholder="(DDD) numero"></label>
           <label>Senha<input id="requestPassword" type="password" autocomplete="new-password" minlength="8" required></label>
           <label>Perfil solicitado<select id="requestRole"><option value="cliente">Cliente</option><option value="gerente">Gerente</option></select></label>
           <label>Motivo<textarea id="requestReason" maxlength="500" rows="4" required></textarea></label>
           <button class="primary" type="submit">Enviar solicitação</button><p id="requestMessage" class="message"></p>
         </form>
       </div>
-      <p class="privacy">Nenhum usuário ou senha de teste é exibido. Novos acessos ficam pendentes até aprovação.</p>
+      <p class="privacy">O e-mail serve para confirmação e recuperação. O acesso é feito pelo nickname. Novos acessos ficam pendentes até aprovação.</p>
     </section>
 
-    <section id="pendingView" class="center hidden"><div class="card"><h2>Solicitação em análise</h2><p>O cadastro foi recebido, mas o acesso ainda não foi autorizado.</p><button id="pendingLogout" class="secondary">Sair</button></div></section>
+    <section id="pendingView" class="center hidden"><div class="card"><h2>Solicitação em análise</h2><p>O cadastro foi recebido. Para entrar, é necessário confirmar o e-mail recebido e aguardar a aprovação da administradora.</p><button id="pendingLogout" class="secondary">Sair</button></div></section>
 
     <section id="appView" class="hidden">
       <header class="topbar"><div><strong>Opera-o</strong><span id="userBadge" class="badge"></span></div><button id="logoutButton" class="secondary">Sair</button></header>
