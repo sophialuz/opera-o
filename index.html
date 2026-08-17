@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
+  <title>Opera-o | Acesso seguro</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="authView" class="auth-wrap">
+      <div class="hero"><span class="logo">O</span><div><h1>Opera-o</h1><p>Ambiente colaborativo protegido</p></div></div>
+      <div class="card auth-card">
+        <div class="tabs"><button class="tab active" data-auth-tab="login">Entrar</button><button class="tab" data-auth-tab="request">Pedir autorização</button></div>
+        <form id="loginForm" class="form">
+          <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+          <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" minlength="8" required></label>
+          <button class="primary" type="submit">Entrar</button><p id="loginMessage" class="message"></p>
+        </form>
+        <form id="requestForm" class="form hidden">
+          <label>Nome completo<input id="requestName" maxlength="120" required></label>
+          <label>E-mail<input id="requestEmail" type="email" autocomplete="email" maxlength="180" required></label>
+          <label>Senha<input id="requestPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Perfil solicitado<select id="requestRole"><option value="cliente">Cliente</option><option value="gerente">Gerente</option></select></label>
+          <label>Motivo<textarea id="requestReason" maxlength="500" rows="4" required></textarea></label>
+          <button class="primary" type="submit">Enviar solicitação</button><p id="requestMessage" class="message"></p>
+        </form>
+      </div>
+      <p class="privacy">Nenhum usuário ou senha de teste é exibido. Novos acessos ficam pendentes até aprovação.</p>
+    </section>
+
+    <section id="pendingView" class="center hidden"><div class="card"><h2>Solicitação em análise</h2><p>O cadastro foi recebido, mas o acesso ainda não foi autorizado.</p><button id="pendingLogout" class="secondary">Sair</button></div></section>
+
+    <section id="appView" class="hidden">
+      <header class="topbar"><div><strong>Opera-o</strong><span id="userBadge" class="badge"></span></div><button id="logoutButton" class="secondary">Sair</button></header>
+      <div class="layout">
+        <nav id="navigation" class="nav"></nav>
+        <div class="content">
+          <section id="dashboardPage" class="page active"><h2>Painel</h2><div id="metrics" class="metrics"></div><div class="card"><h3>Atividade em tempo real</h3><div id="activityList" class="list"></div></div></section>
+          <section id="requestsPage" class="page"><h2>Solicitações de acesso</h2><div id="requestsList" class="list"></div></section>
+          <section id="recordsPage" class="page"><div class="page-head"><h2>Registros compartilhados</h2><button id="newRecordButton" class="primary">Novo registro</button></div><form id="recordForm" class="card form hidden"><label>Título<input id="recordTitle" maxlength="120" required></label><label>Descrição<textarea id="recordDescription" maxlength="1000" rows="4"></textarea></label><button class="primary">Salvar</button></form><div id="recordsList" class="list"></div></section>
+          <section id="auditPage" class="page"><h2>Histórico</h2><div id="auditList" class="list"></div></section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
