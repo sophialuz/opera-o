@@ -1,106 +1,14 @@
-(() => {
-  'use strict';
-  const cfg = window.APP_CONFIG || {};
-  if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes('SEU-PROJETO')) {
-    document.body.innerHTML = '<main class="shell"><div class="card"><h2>Configuracao pendente</h2><p>Preencha o arquivo <b>config.js</b> com a URL e a chave publica do Supabase.</p></div></main>'; return;
-  }
-  const db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-  const $ = id => document.getElementById(id);
-  let profile = null, channel = null;
-  const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const msg = (el,text,type='') => { el.textContent=text; el.className='message '+type; };
-  const friendlyAuthError = error => {
-    const raw = String(error?.message || error || '').toLowerCase();
-    if (raw.includes('email not confirmed')) return 'O e-mail ainda nao foi confirmado. Abra a mensagem enviada pelo sistema e confirme o cadastro.';
-    if (raw.includes('invalid login') || raw.includes('invalid credentials')) return 'Nickname ou senha incorretos.';
-    if (raw.includes('not approved')) return 'Acesso ainda nao aprovado pela administradora.';
-    return 'Nao foi possivel entrar. Confira o nickname, a senha e a confirmacao do e-mail.';
-  };
-
-  document.querySelectorAll('[data-auth-tab]').forEach(b=>b.onclick=()=>{
-    document.querySelectorAll('[data-auth-tab]').forEach(x=>x.classList.toggle('active',x===b));
-    $('loginForm').classList.toggle('hidden',b.dataset.authTab!=='login');
-    $('requestForm').classList.toggle('hidden',b.dataset.authTab!=='request');
-    msg($('loginMessage'),''); msg($('requestMessage'),'');
-  });
-
-  $('loginForm').onsubmit=async e=>{
-    e.preventDefault(); msg($('loginMessage'),'Entrando...');
-    const nickname=$('loginNickname').value.trim().toLowerCase();
-    const password=$('loginPassword').value;
-    try {
-      const response=await fetch(`${cfg.SUPABASE_URL}/functions/v1/username-login`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':cfg.SUPABASE_ANON_KEY},
-        body:JSON.stringify({nickname,password})
-      });
-      const data=await response.json();
-      if(!response.ok) throw new Error(data.error||'Invalid login credentials');
-      const {error}=await db.auth.setSession({access_token:data.access_token,refresh_token:data.refresh_token});
-      if(error) throw error;
-      await routeSession();
-    } catch(error){ msg($('loginMessage'),friendlyAuthError(error),'error'); }
-  };
-
-  $('requestForm').onsubmit=async e=>{
-    e.preventDefault(); msg($('requestMessage'),'Enviando...');
-    const nickname=$('requestNickname').value.trim().toLowerCase();
-    const payload={
-      email:$('requestEmail').value.trim().toLowerCase(),
-      password:$('requestPassword').value,
-      options:{
-        emailRedirectTo:location.origin+location.pathname,
-        data:{
-          full_name:$('requestName').value.trim(),
-          nickname,
-          phone:$('requestPhone').value.trim(),
-          requested_role:$('requestRole').value,
-          reason:$('requestReason').value.trim()
-        }
-      }
-    };
-    const {error}=await db.auth.signUp(payload);
-    if(error){
-      const text=String(error.message||'');
-      if(text.toLowerCase().includes('duplicate')||text.toLowerCase().includes('already')) return msg($('requestMessage'),'Esse e-mail ou nickname ja foi cadastrado.','error');
-      return msg($('requestMessage'),text,'error');
-    }
-    e.target.reset();
-    msg($('requestMessage'),'Solicitacao enviada. Confirme o e-mail recebido e aguarde a aprovacao da administradora.','success');
-  };
-
-  $('pendingLogout').onclick=$('logoutButton').onclick=()=>db.auth.signOut();
-  $('newRecordButton').onclick=()=>$('recordForm').classList.toggle('hidden');
-  $('recordForm').onsubmit=async e=>{e.preventDefault();const {error}=await db.from('records').insert({title:$('recordTitle').value.trim(),description:$('recordDescription').value.trim()});if(error)return alert(error.message);e.target.reset();e.target.classList.add('hidden');};
-
-  async function routeSession(){
-    const {data:{session}}=await db.auth.getSession();
-    $('authView').classList.toggle('hidden',!!session); $('appView').classList.add('hidden'); $('pendingView').classList.add('hidden');
-    if(!session)return;
-    const {data,error}=await db.from('profiles').select('*').eq('id',session.user.id).single();
-    if(error||!data||data.status!=='approved'){$('authView').classList.add('hidden');$('pendingView').classList.remove('hidden');return;}
-    profile=data; $('appView').classList.remove('hidden'); $('userBadge').textContent=`${profile.full_name} · @${profile.nickname} · ${profile.role}`;
-    buildNav(); subscribe(); renderAll();
-  }
-  function buildNav(){const pages=[['dashboard','Painel'],['records','Registros'],['audit','Historico']];if(profile.role==='admin')pages.splice(1,0,['requests','Autorizacoes']);$('navigation').innerHTML='';pages.forEach(([id,label],i)=>{const b=document.createElement('button');b.textContent=label;b.className=i===0?'active':'';b.onclick=()=>{document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id+'Page').classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderAll();};$('navigation').appendChild(b);});}
-  async function renderAll(){
-    if(!profile)return;
-    const [{data:records},{data:audits},{data:reqs}]=await Promise.all([
-      db.from('records').select('*').order('created_at',{ascending:false}),
-      db.from('audit_log').select('*').order('created_at',{ascending:false}).limit(100),
-      profile.role==='admin'?db.from('profiles').select('*').eq('status','pending').order('created_at',{ascending:false}):Promise.resolve({data:[]})
-    ]);
-    $('metrics').innerHTML=`<div class="metric">Registros<b>${records?.length||0}</b></div><div class="metric">Pendentes<b>${reqs?.length||0}</b></div><div class="metric">Atualizacao<b>Tempo real</b></div>`;
-    renderRecords(records||[]); renderAudit(audits||[]); if(profile.role==='admin')renderRequests(reqs||[]);
-  }
-  function renderRecords(rows){$('recordsList').innerHTML=rows.length?rows.map(r=>`<article class="item"><div class="item-head"><div><b>${esc(r.title)}</b><p>${esc(r.description)}</p><small>${new Date(r.created_at).toLocaleString('pt-BR')}</small></div><span class="status">${esc(r.status)}</span></div>${profile.role!=='cliente'?`<div class="actions"><button class="danger" data-delete="${r.id}">Excluir</button></div>`:''}</article>`).join(''):'<div class="empty">Nenhum registro.</div>';document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(confirm('Excluir este registro?'))await db.from('records').delete().eq('id',b.dataset.delete);});}
-  function renderRequests(rows){
-    $('requestsList').innerHTML=rows.length?rows.map(r=>`<article class="item request-card"><div class="item-head"><div><b>${esc(r.full_name)}</b><div class="request-grid"><span><strong>Nickname:</strong> @${esc(r.nickname)}</span><span><strong>E-mail:</strong> ${esc(r.email)}</span><span><strong>Celular:</strong> ${esc(r.phone||'Nao informado')}</span><span><strong>Perfil:</strong> ${esc(r.requested_role)}</span><span><strong>Solicitado em:</strong> ${new Date(r.created_at).toLocaleString('pt-BR')}</span><span><strong>Confirmacao do e-mail:</strong> necessaria para o primeiro login</span></div><p><strong>Motivo:</strong> ${esc(r.request_reason||'Nao informado')}</p></div><span class="status">Pendente</span></div><label class="decision-label">Observacao da decisao<textarea data-note="${r.id}" rows="2" maxlength="500" placeholder="Opcional: motivo da aprovacao ou rejeicao"></textarea></label><div class="actions"><button class="approve" data-approve="${r.id}">Aprovar</button><button class="danger" data-reject="${r.id}">Rejeitar</button></div></article>`).join(''):'<div class="empty">Nenhuma solicitacao pendente.</div>';
-    document.querySelectorAll('[data-approve]').forEach(b=>b.onclick=()=>decide(b.dataset.approve,'approved'));
-    document.querySelectorAll('[data-reject]').forEach(b=>b.onclick=()=>decide(b.dataset.reject,'rejected'));
-  }
-  async function decide(id,status){const note=document.querySelector(`[data-note="${id}"]`)?.value.trim()||'';const {error}=await db.rpc('decide_access_v2',{target_user:id,new_status:status,decision_note:note});if(error)alert(error.message);}
-  function renderAudit(rows){const html=rows.length?rows.map(a=>`<div class="item"><div class="item-head"><b>${esc(a.action)}</b><span class="status">${new Date(a.created_at).toLocaleString('pt-BR')}</span></div><p>${esc(a.details||'Sem detalhes adicionais')}</p><small>Identificador da acao: ${esc(a.id)}</small></div>`).join(''):'<div class="empty">Sem historico.</div>';$('auditList').innerHTML=html;$('activityList').innerHTML=html;}
-  function subscribe(){if(channel)db.removeChannel(channel);channel=db.channel('app-live').on('postgres_changes',{event:'*',schema:'public',table:'records'},renderAll).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},renderAll).on('postgres_changes',{event:'*',schema:'public',table:'audit_log'},renderAll).subscribe();}
-  db.auth.onAuthStateChange(()=>setTimeout(routeSession,0)); routeSession();
-})();
+(()=>{'use strict';const cfg=window.APP_CONFIG||{};if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('SEU-PROJETO')){document.body.innerHTML='<main class="shell"><div class="card"><h2>Configuração pendente</h2><p>Preencha config.js.</p></div></main>';return}const db=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY),$=id=>document.getElementById(id);let profile,channel;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),m=(el,t,k='')=>{el.textContent=t;el.className='message '+k};const menus={'Lua & Tempero':['Lua Cheia Crocante — R$ 28,90','Jardim Secreto — R$ 25,90','Beijo de Fogo — R$ 29,90','Eclipse de Picanha — R$ 69,90','Abraço Cremoso — R$ 48,90','Frango Noite de Verão — R$ 45,90','Risoto Sob as Estrelas — R$ 51,90','Lua Burguer — R$ 42,90','Lua de Chocolate — R$ 24,90','Morango dos Sonhos — R$ 22,90','Nuvem de Limão — R$ 19,90'],'Estação 27':['Batata Só Mais Uma — R$ 29,90','Torresmo Sem Culpa — R$ 26,90','Explosão de Queijo — R$ 27,90','O Asteroide — R$ 72,90','O Rock Star — R$ 49,90','Frango Não Conta Pra Ninguém — R$ 44,90','Macarrão do Caos — R$ 47,90','Fogo no Palco — R$ 52,90','Combo A Banda Toda — R$ 89,90','Tábua Último Bis — R$ 99,90','Brownie Rock’n’Roll — R$ 24,90']};
+document.querySelectorAll('[data-auth-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-auth-tab]').forEach(x=>x.classList.toggle('active',x===b));$('loginForm').classList.toggle('hidden',b.dataset.authTab!=='login');$('requestForm').classList.toggle('hidden',b.dataset.authTab!=='request')});
+$('loginForm').onsubmit=async e=>{e.preventDefault();m($('loginMessage'),'Entrando...');try{const r=await fetch(`${cfg.SUPABASE_URL}/functions/v1/username-login`,{method:'POST',headers:{'Content-Type':'application/json','apikey':cfg.SUPABASE_ANON_KEY},body:JSON.stringify({nickname:$('loginNickname').value.trim().toLowerCase(),password:$('loginPassword').value})}),d=await r.json();if(!r.ok)throw Error(d.error);const {error}=await db.auth.setSession({access_token:d.access_token,refresh_token:d.refresh_token});if(error)throw error;route()}catch(e){const x=String(e.message).includes('Not approved')?'Acesso ainda não autorizado.':'Nickname ou senha incorretos.';m($('loginMessage'),x,'error')}};
+$('requestForm').onsubmit=async e=>{e.preventDefault();m($('requestMessage'),'Enviando...');const {error}=await db.auth.signUp({email:$('requestEmail').value.trim().toLowerCase(),password:$('requestPassword').value,options:{data:{full_name:$('requestName').value.trim(),nickname:$('requestNickname').value.trim().toLowerCase(),phone:$('requestPhone').value.trim(),requested_role:$('requestRole').value,reason:$('requestReason').value.trim()}}});if(error)return m($('requestMessage'),error.message,'error');await db.auth.signOut();e.target.reset();m($('requestMessage'),'Solicitação enviada. Aguarde a autorização.','success')};
+$('pendingLogout').onclick=$('logoutButton').onclick=()=>db.auth.signOut();$('newOrderButton').onclick=()=>$('orderForm').classList.toggle('hidden');$('newReservationButton').onclick=()=>$('reservationForm').classList.toggle('hidden');$('orderRestaurant').onchange=fillDishes;fillDishes();function fillDishes(){$('orderDish').innerHTML=menus[$('orderRestaurant').value].map(x=>`<option>${esc(x)}</option>`).join('')}
+$('orderForm').onsubmit=async e=>{e.preventDefault();const {error}=await db.from('orders').insert({restaurant:$('orderRestaurant').value,dish:$('orderDish').value,quantity:+$('orderQty').value,note:$('orderNote').value.trim()});if(error)return alert(error.message);e.target.reset();fillDishes();e.target.classList.add('hidden')};
+$('reservationForm').onsubmit=async e=>{e.preventDefault();const {error}=await db.from('reservations').insert({restaurant:$('reservationRestaurant').value,customer_name:$('reservationName').value.trim(),reservation_date:$('reservationDate').value,reservation_time:$('reservationTime').value,table_name:$('reservationTable').value});if(error)return alert(error.message);e.target.reset();e.target.classList.add('hidden')};
+$('transferForm').onsubmit=async e=>{e.preventDefault();const {error}=await db.rpc('transfer_order',{target_order:$('transferOrder').value,new_restaurant:$('transferRestaurant').value,transfer_reason:$('transferReason').value.trim()});if(error)alert(error.message);else e.target.reset()};
+$('responsibleForm').onsubmit=async e=>{e.preventDefault();const {error}=await db.rpc('change_responsible',{target_restaurant:$('responsibleRestaurant').value,new_responsible:$('responsibleName').value.trim(),change_reason:$('responsibleReason').value.trim()});if(error)alert(error.message);else e.target.reset()};
+async function route(){const {data:{session}}=await db.auth.getSession();$('authView').classList.toggle('hidden',!!session);$('appView').classList.add('hidden');$('pendingView').classList.add('hidden');if(!session)return;const {data}=await db.from('profiles').select('*').eq('id',session.user.id).single();if(!data||data.status!=='approved'){$('pendingView').classList.remove('hidden');return}profile=data;$('appView').classList.remove('hidden');$('userBadge').textContent=`${data.full_name} · @${data.nickname} · ${data.role}`;nav();sub();render()}
+function nav(){const p=[['dashboard','Painel'],['menu','Cardápios'],['orders','Pedidos'],['reservations','Reservas'],['history','Histórico']];if(profile.role==='admin')p.splice(1,0,['requests','Autorizações']);if(profile.role!=='cliente')p.splice(p.length-1,0,['operations','Operação']);$('navigation').innerHTML='';p.forEach(([id,l],i)=>{const b=document.createElement('button');b.textContent=l;b.className=i?'':'active';b.onclick=()=>{document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id+'Page').classList.add('active');document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');render()};$('navigation').appendChild(b)})}
+async function render(){if(!profile)return;const [o,r,h,q,resp]=await Promise.all([db.from('orders').select('*').order('created_at',{ascending:false}),db.from('reservations').select('*').order('created_at',{ascending:false}),db.from('audit_log').select('*').order('created_at',{ascending:false}).limit(150),profile.role==='admin'?db.from('profiles').select('*').eq('status','pending').order('created_at',{ascending:false}):Promise.resolve({data:[]}),db.from('restaurant_responsibles').select('*').order('restaurant')]);const orders=o.data||[],res=r.data||[],hist=h.data||[],req=q.data||[];$('metrics').innerHTML=`<div class="metric">Pedidos<b>${orders.length}</b></div><div class="metric">Reservas<b>${res.length}</b></div><div class="metric">Pendentes<b>${req.length}</b></div>`;$('menuGrid').innerHTML=Object.entries(menus).map(([n,it])=>`<div class="card"><h3>${esc(n)}</h3>${it.map(x=>`<div class="menu-item">${esc(x)}</div>`).join('')}</div>`).join('');renderReq(req);$('ordersList').innerHTML=orders.length?orders.map(x=>`<article class="item"><b>#${x.id.slice(0,8)} · ${esc(x.dish)}</b><p>${esc(x.restaurant)} · Quantidade ${x.quantity} · ${esc(x.status)}</p><small>${new Date(x.created_at).toLocaleString('pt-BR')} · ${esc(x.note||'Sem observação')}</small></article>`).join(''):'<div class="empty">Nenhum pedido.</div>';$('reservationsList').innerHTML=res.length?res.map(x=>`<article class="item"><b>${esc(x.customer_name)} · ${esc(x.restaurant)}</b><p>${esc(x.reservation_date)} às ${esc(x.reservation_time)} · ${esc(x.table_name)} · ${esc(x.status)}</p></article>`).join(''):'<div class="empty">Nenhuma reserva.</div>';$('transferOrder').innerHTML=orders.filter(x=>x.status!=='Cancelado').map(x=>`<option value="${x.id}">#${x.id.slice(0,8)} · ${esc(x.dish)} · ${esc(x.restaurant)}</option>`).join('');$('responsiblesList').innerHTML=(resp.data||[]).map(x=>`<article class="item"><b>${esc(x.restaurant)}</b><p>Responsável: ${esc(x.responsible_name)}</p><small>Atualizado em ${new Date(x.updated_at).toLocaleString('pt-BR')}</small></article>`).join('');const hh=hist.length?hist.map(x=>`<article class="item"><div class="item-head"><b>${esc(x.action)}</b><span class="status">${new Date(x.created_at).toLocaleString('pt-BR')}</span></div><p>${esc(x.details||'Sem detalhes')}</p></article>`).join(''):'<div class="empty">Sem histórico.</div>';$('historyList').innerHTML=hh;$('activityList').innerHTML=hh}
+function renderReq(a){if(!profile||profile.role!=='admin')return;$('requestsList').innerHTML=a.length?a.map(x=>`<article class="item"><div class="item-head"><div><b>${esc(x.full_name)}</b><div class="request-grid"><span><strong>Nickname:</strong> @${esc(x.nickname)}</span><span><strong>E-mail:</strong> ${esc(x.email)}</span><span><strong>Celular:</strong> ${esc(x.phone||'Não informado')}</span><span><strong>Perfil:</strong> ${esc(x.requested_role)}</span><span><strong>Data:</strong> ${new Date(x.created_at).toLocaleString('pt-BR')}</span></div><p><strong>Motivo:</strong> ${esc(x.request_reason||'Não informado')}</p></div><span class="status">Pendente</span></div><label class="decision-label">Observação<textarea data-note="${x.id}"></textarea></label><div class="actions"><button class="approve" data-ok="${x.id}">Aprovar</button><button class="danger" data-no="${x.id}">Rejeitar</button></div></article>`).join(''):'<div class="empty">Nenhuma solicitação.</div>';document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>decide(b.dataset.ok,'approved'));document.querySelectorAll('[data-no]').forEach(b=>b.onclick=()=>decide(b.dataset.no,'rejected'))}
+async function decide(id,s){const note=document.querySelector(`[data-note="${id}"]`)?.value||'';const {error}=await db.rpc('decide_access_v2',{target_user:id,new_status:s,decision_note:note});if(error)alert(error.message)}function sub(){if(channel)db.removeChannel(channel);channel=db.channel('live').on('postgres_changes',{event:'*',schema:'public'},render).subscribe()}db.auth.onAuthStateChange(()=>setTimeout(route,0));route()})();
